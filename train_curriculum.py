@@ -1,3 +1,16 @@
+"""
+Training script with Curriculum Learning support.
+
+Usage:
+    # Curriculum only (C)
+    python train_curriculum.py --config-path configs/celeba32_c.json --num-gpus 6 --distributed --rigid-launch
+
+    # Single GPU
+    python train_curriculum.py --config-path configs/celeba32_c.json
+
+Based on train.py but uses CurriculumDiffusion and CurriculumTrainer.
+"""
+
 import json
 import os
 import tempfile
@@ -7,6 +20,8 @@ import torch.multiprocessing as mp
 from datetime import datetime
 from ddim import *
 from ddpm_torch import *
+from ddpm_torch.curriculum import CurriculumDiffusion
+from ddpm_torch.curriculum_trainer import CurriculumTrainer
 from functools import partial
 from torch.distributed.elastic.multiprocessing import errors
 from torch.nn.parallel import DistributedDataParallel as DDP  # noqa
@@ -17,7 +32,10 @@ def train(rank=0, args=None, temp_dir=""):
     distributed = args.distributed
 
     def logger(msg, **kwargs):
-        if not distributed or dist.get_rank() == 0:
+        # Only print on rank 0, but handle case before dist is initialized
+        if not distributed:
+            print(msg, **kwargs)
+        elif dist.is_initialized() and dist.get_rank() == 0:
             print(msg, **kwargs)
 
     root = os.path.expanduser(args.root)
@@ -57,7 +75,14 @@ def train(rank=0, args=None, temp_dir=""):
     betas = get_beta_schedule(
         diffusion_config.beta_schedule, beta_start=diffusion_config.beta_start,
         beta_end=diffusion_config.beta_end, timesteps=diffusion_config.timesteps)
-    diffusion = GaussianDiffusion(betas=betas, **diffusion_config)
+
+    # Use CurriculumDiffusion instead of GaussianDiffusion
+    diffusion = CurriculumDiffusion(betas=betas, **diffusion_config)
+
+    # Extract curriculum configuration (logging moved to after dist init)
+    curriculum_config = meta_config.get("curriculum", {})
+    if not curriculum_config.get("enabled", False):
+        curriculum_config = {"stages": []}
 
     # extract model-specific hyperparameters
     out_channels = 2 * in_channels if diffusion_config.model_var_type == "learned" else in_channels
@@ -121,6 +146,15 @@ def train(rank=0, args=None, temp_dir=""):
         f"Effective batch-size is {train_config.batch_size} * {args.num_accum}"
         f" = {train_config.batch_size * args.num_accum}.")
 
+    # Log curriculum configuration (after dist init)
+    if curriculum_config.get("enabled", False):
+        logger(f"[Curriculum] Enabled with {len(curriculum_config.get('stages', []))} stages")
+        for i, stage in enumerate(curriculum_config.get("stages", [])):
+            logger(f"  Stage {i+1}: t_min={stage.get('t_min', 0):.2f}, "
+                   f"t_max={stage.get('t_max', 1):.2f}, epochs={stage.get('epochs', 0)}")
+    else:
+        logger("[Curriculum] Disabled (using full time range)")
+
     # PyTorch's implementation of Adam differs slightly from TensorFlow in that
     # the former follows Algorithm 1 as described in the paper by Kingma & Ba (2015) [1]
     # while the latter adopts an alternative approach mentioned just before Section 2.1
@@ -160,7 +194,8 @@ def train(rank=0, args=None, temp_dir=""):
             "seed": seed,
             "diffusion": diffusion_config,
             "model": model_config,
-            "train": train_config
+            "train": train_config,
+            "curriculum": curriculum_config
         }
         timestamp = datetime.now().strftime("%Y-%m-%dT%H%M%S%f")
 
@@ -172,7 +207,8 @@ def train(rank=0, args=None, temp_dir=""):
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
 
-    trainer = Trainer(
+    # Use CurriculumTrainer instead of Trainer
+    trainer = CurriculumTrainer(
         model=model,
         optimizer=optimizer,
         diffusion=diffusion,
@@ -191,7 +227,9 @@ def train(rank=0, args=None, temp_dir=""):
         ema_decay=args.ema_decay,
         rank=rank,
         distributed=distributed,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
+        # Curriculum-specific config
+        curriculum_config=curriculum_config
     )
 
     if args.use_ddim:
@@ -291,7 +329,7 @@ def main():
         """
         As opposed to the case of rigid launch, distributed training now:
         (*: elastic launch only; **: Slurm srun only)
-         *1. handles failures by restarting all the workers 
+         *1. handles failures by restarting all the workers
          *2.1 assigns RANK and WORLD_SIZE automatically
         **2.2 sets MASTER_ADDR & MASTER_PORT manually beforehand via environment variables
          *3. allows for number of nodes change

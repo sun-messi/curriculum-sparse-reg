@@ -154,6 +154,27 @@ class CelebA(tvds.VisionDataset):
 
 
 @register_dataset
+class CelebA32(CelebA):
+    """
+    CelebA Dataset resized to 32x32 for faster training
+    """
+    resolution = (32, 32)
+    channels = 3
+    transform = transforms.Compose([
+        crop_celeba,
+        transforms.Resize((32, 32)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
+    _transform = transforms.Compose([
+        crop_celeba,
+        transforms.Resize((32, 32)),
+        transforms.PILToTensor()
+    ])
+
+
+@register_dataset
 class CelebA_HQ(tvds.VisionDataset):
     """
     High-Quality version of the CELEBA dataset, consisting of 30000 images in 1024 x 1024 resolution

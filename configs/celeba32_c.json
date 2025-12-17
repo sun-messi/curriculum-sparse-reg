@@ -1,0 +1,41 @@
+{
+  "dataset": "celeba32",
+  "diffusion": {
+    "timesteps": 1000,
+    "beta_start": 0.0001,
+    "beta_end": 0.02,
+    "beta_schedule": "linear",
+    "model_mean_type": "eps",
+    "model_var_type": "fixed-small",
+    "loss_type": "mse"
+  },
+  "model": {
+    "in_channels": 3,
+    "hid_channels": 64,
+    "ch_multipliers": [1, 2, 2],
+    "num_res_blocks": 2,
+    "apply_attn": [false, false, false],
+    "drop_rate": 0.0
+  },
+  "train": {
+    "lr": 2e-4,
+    "batch_size": 128,
+    "grad_norm": 1.0,
+    "epochs": 100,
+    "warmup": 5000,
+    "use_ema": true,
+    "ema_decay": 0.9999,
+    "num_samples": 12,
+    "image_intv": 1
+  },
+  "curriculum": {
+    "enabled": true,
+    "stages": [
+      {"t_min": 0.8, "t_max": 1.0, "epochs": 1, "name": "stage1_high_noise"},
+      {"t_min": 0.6, "t_max": 1.0, "epochs": 1, "name": "stage2_expand"},
+      {"t_min": 0.4, "t_max": 1.0, "epochs": 2, "name": "stage3_expand"},
+      {"t_min": 0.2, "t_max": 1.0, "epochs": 2, "name": "stage4_expand"},
+      {"t_min": 0.0, "t_max": 1.0, "epochs": 5, "name": "stage5_full_range"}
+    ]
+  }
+}
