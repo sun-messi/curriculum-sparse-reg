@@ -13,6 +13,7 @@ Based on train.py but uses CurriculumDiffusion and CurriculumTrainer.
 
 import json
 import os
+import re
 import tempfile
 import torch
 import torch.distributed as dist
@@ -28,6 +29,15 @@ from torch.nn.parallel import DistributedDataParallel as DDP  # noqa
 from torch.optim import Adam, lr_scheduler
 
 
+def load_jsonc(filepath):
+    """Load JSON file with // comments support (JSONC format)."""
+    with open(filepath, "r") as f:
+        content = f.read()
+    # Remove single-line comments (// ...)
+    content = re.sub(r'//.*$', '', content, flags=re.MULTILINE)
+    return json.loads(content)
+
+
 def train(rank=0, args=None, temp_dir=""):
     distributed = args.distributed
 
@@ -41,8 +51,7 @@ def train(rank=0, args=None, temp_dir=""):
     root = os.path.expanduser(args.root)
     if args.config_path is None:
         args.config_path = os.path.join(args.config_dir, args.dataset + ".json")
-    with open(args.config_path, "r") as f:
-        meta_config = json.load(f)
+    meta_config = load_jsonc(args.config_path)  # Support // comments in JSON
     exp_name = os.path.basename(args.config_path)[:-5]
 
     # dataset basic info
@@ -84,13 +93,35 @@ def train(rank=0, args=None, temp_dir=""):
     if not curriculum_config.get("enabled", False):
         curriculum_config = {"stages": []}
 
+    # Extract sparsity configuration (CS mode)
+    sparsity_config = meta_config.get("sparsity", {})
+    sparsity_enabled = sparsity_config.get("enabled", False)
+
+    # Extract regularization configuration (CR mode)
+    reg_config = meta_config.get("regularization", {})
+    reg_enabled = reg_config.get("enabled", False)
+
     # extract model-specific hyperparameters
     out_channels = 2 * in_channels if diffusion_config.model_var_type == "learned" else in_channels
     model_config = meta_config["model"]
     block_size = model_config.pop("block_size", args.block_size)
     model_config["in_channels"] = in_channels * block_size ** 2
     model_config["out_channels"] = out_channels * block_size ** 2
-    _model = UNet(**model_config)
+
+    # Model selection based on mode (C, CS, or CR)
+    if sparsity_enabled:
+        # CS mode: Curriculum + Sparsity
+        _model = SparseUNet(
+            initial_sparsity=sparsity_config.get("initial_sparsity", 0.8),
+            regrowth_method=sparsity_config.get("regrowth_method", "gradient"),
+            **model_config
+        )
+    elif reg_enabled:
+        # CR mode: Curriculum + Regularization
+        _model = RegUNet(**model_config)
+    else:
+        # C mode: Curriculum only
+        _model = UNet(**model_config)
 
     if block_size > 1:
         pre_transform = torch.nn.PixelUnshuffle(block_size)  # space-to-depth
@@ -195,7 +226,9 @@ def train(rank=0, args=None, temp_dir=""):
             "diffusion": diffusion_config,
             "model": model_config,
             "train": train_config,
-            "curriculum": curriculum_config
+            "curriculum": curriculum_config,
+            "sparsity": sparsity_config,
+            "regularization": reg_config
         }
         timestamp = datetime.now().strftime("%Y-%m-%dT%H%M%S%f")
 
@@ -229,7 +262,10 @@ def train(rank=0, args=None, temp_dir=""):
         distributed=distributed,
         dry_run=args.dry_run,
         # Curriculum-specific config
-        curriculum_config=curriculum_config
+        curriculum_config=curriculum_config,
+        # Sparsity and Regularization configs
+        sparsity_config=sparsity_config if sparsity_enabled else None,
+        regularization_config=reg_config if reg_enabled else None
     )
 
     if args.use_ddim:

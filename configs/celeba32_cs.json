@@ -1,17 +1,24 @@
-// Mode C: Curriculum Only (UNet)
+// Mode CS: Curriculum + Sparsity (SparseUNet with hard mask at bottleneck)
 //
 // Usage:
 //   Single GPU:
-//     python train_curriculum.py --config-path configs/celeba32_c.json
+//     python train_curriculum.py --config-path configs/celeba32_cs.json
 //
 //   Multi-GPU (6 GPUs):
-//     python train_curriculum.py --config-path configs/celeba32_c.json --num-gpus 6 --distributed --rigid-launch
+//     python train_curriculum.py --config-path configs/celeba32_cs.json --num-gpus 6 --distributed --rigid-launch
 //
 //   Select specific GPUs (0,1,3,5):
-//     CUDA_VISIBLE_DEVICES=0,1,3,5 python train_curriculum.py --config-path configs/celeba32_c.json --num-gpus 4 --distributed --rigid-launch
+//     CUDA_VISIBLE_DEVICES=0,1,3,5 python train_curriculum.py --config-path configs/celeba32_cs.json --num-gpus 4 --distributed --rigid-launch
 //
 //   Using torchrun (elastic launch):
-//     torchrun --standalone --nproc_per_node 4 train_curriculum.py --config-path configs/celeba32_c.json --distributed
+//     torchrun --standalone --nproc_per_node 4 train_curriculum.py --config-path configs/celeba32_cs.json --distributed
+//
+// Sparsity Schedule (linear decay):
+//   Stage 0: 80% sparse (25/128 active)
+//   Stage 1: 60% sparse (51/128 active)
+//   Stage 2: 40% sparse (77/128 active)
+//   Stage 3: 20% sparse (102/128 active)
+//   Stage 4: 0% sparse  (128/128 active)
 //
 {
   "dataset": "celeba32",
@@ -54,7 +61,7 @@
     ]
   },
   "sparsity": {
-    "enabled": false,
+    "enabled": true,
     "initial_sparsity": 0.8,
     "regrowth_method": "gradient"
   },

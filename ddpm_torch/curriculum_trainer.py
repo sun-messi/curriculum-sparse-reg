@@ -4,6 +4,8 @@ CurriculumTrainer: Trainer with Curriculum Learning support
 Inherits from Trainer and adds:
 - Stage-based training management
 - Time range control for diffusion
+- Sparsity support (CS mode)
+- Regularization support (CR mode)
 - Logging for curriculum stages
 """
 
@@ -11,6 +13,7 @@ import os
 import re
 import math
 import torch
+import torch.nn as nn
 import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
@@ -20,7 +23,7 @@ from .utils.train import Trainer, save_image
 
 class CurriculumTrainer(Trainer):
     """
-    Trainer with curriculum learning support.
+    Trainer with curriculum learning, sparsity, and regularization support.
 
     Curriculum configuration format:
     {
@@ -30,11 +33,26 @@ class CurriculumTrainer(Trainer):
             ...
         ]
     }
+
+    Sparsity configuration (CS mode):
+    {
+        "enabled": true,
+        "initial_sparsity": 0.8,
+        "regrowth_method": "gradient"
+    }
+
+    Regularization configuration (CR mode):
+    {
+        "enabled": true,
+        "lambda_max": 0.00003
+    }
     """
 
     def __init__(
             self,
             curriculum_config=None,
+            sparsity_config=None,
+            regularization_config=None,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -43,6 +61,17 @@ class CurriculumTrainer(Trainer):
         self.stages = self.curriculum_config.get("stages", [])
         self.current_stage = -1
         self.current_stage_name = "default"
+
+        # Sparsity configuration (CS mode)
+        self.sparsity_config = sparsity_config or {}
+        self.sparsity_enabled = self.sparsity_config.get("enabled", False)
+        self.initial_sparsity = self.sparsity_config.get("initial_sparsity", 0.8)
+
+        # Regularization configuration (CR mode)
+        self.reg_config = regularization_config or {}
+        self.reg_enabled = self.reg_config.get("enabled", False)
+        self.lambda_max = self.reg_config.get("lambda_max", 0.00003)
+        self.current_lambda = 0.0
 
         # Build epoch-to-stage mapping
         self._build_stage_mapping()
@@ -54,6 +83,15 @@ class CurriculumTrainer(Trainer):
                 print(f"[Curriculum] Overriding train.epochs ({self.epochs}) "
                       f"with curriculum total ({curriculum_total_epochs})")
             self.epochs = curriculum_total_epochs
+
+        # Log mode
+        if self.is_leader:
+            if self.sparsity_enabled:
+                print(f"[Mode] CS - Curriculum + Sparsity (initial={self.initial_sparsity:.0%})")
+            elif self.reg_enabled:
+                print(f"[Mode] CR - Curriculum + Regularization (lambda_max={self.lambda_max})")
+            else:
+                print(f"[Mode] C - Curriculum only")
 
     def _build_stage_mapping(self):
         """Build mapping from epoch number to stage."""
@@ -78,8 +116,42 @@ class CurriculumTrainer(Trainer):
             return -1  # No curriculum
         return self.epoch_to_stage.get(epoch, len(self.stages) - 1)
 
+    def _get_model(self):
+        """Get underlying model (handles DDP wrapper)."""
+        if hasattr(self.model, 'module'):
+            return self.model.module
+        return self.model
+
+    def _get_sparsity_for_stage(self, stage_idx):
+        """
+        Get target sparsity for given stage using linear decay.
+
+        Formula: sparsity = initial * (num_stages - 1 - stage_idx) / (num_stages - 1)
+        Last stage is always 0 (all channels active).
+        """
+        if not self.stages:
+            return 0.0
+        num_stages = len(self.stages)
+        if num_stages <= 1:
+            return 0.0
+        return self.initial_sparsity * (num_stages - 1 - stage_idx) / (num_stages - 1)
+
+    def _get_lambda_for_stage(self, stage_idx):
+        """
+        Get regularization lambda for given stage using linear decay.
+
+        Formula: lambda = lambda_max * (num_stages - 1 - stage_idx) / (num_stages - 1)
+        Last stage is always 0 (no regularization).
+        """
+        if not self.stages:
+            return 0.0
+        num_stages = len(self.stages)
+        if num_stages <= 1:
+            return 0.0
+        return self.lambda_max * (num_stages - 1 - stage_idx) / (num_stages - 1)
+
     def _update_curriculum(self, epoch):
-        """Update diffusion time range based on current epoch."""
+        """Update diffusion time range, sparsity, and regularization based on epoch."""
         if not self.stages:
             return  # No curriculum configured
 
@@ -100,6 +172,23 @@ class CurriculumTrainer(Trainer):
                     print(f"\n[Curriculum] Stage {stage_idx + 1}/{len(self.stages)}: "
                           f"t_range=[{t_min:.2f}, {t_max:.2f}] "
                           f"(indices: [{t_min_idx}, {t_max_idx}])")
+
+            # Update sparsity if enabled (CS mode)
+            if self.sparsity_enabled:
+                model = self._get_model()
+                if hasattr(model, 'regrow_channels'):
+                    target_sparsity = self._get_sparsity_for_stage(stage_idx)
+                    num_regrown = model.regrow_channels(target_sparsity, stage_idx)
+                    if self.is_leader:
+                        actual_sparsity = model.get_current_sparsity()
+                        print(f"[Sparsity] target={target_sparsity:.0%}, "
+                              f"actual={actual_sparsity:.0%}, regrown={num_regrown}")
+
+            # Update regularization lambda if enabled (CR mode)
+            if self.reg_enabled:
+                self.current_lambda = self._get_lambda_for_stage(stage_idx)
+                if self.is_leader:
+                    print(f"[Regularization] lambda={self.current_lambda:.6f}")
 
     def get_input(self, x):
         """
@@ -123,6 +212,76 @@ class CurriculumTrainer(Trainer):
             "t": t,
             "noise": torch.empty_like(x).normal_(generator=self.generator)
         }
+
+    def loss(self, x):
+        """
+        Override: Compute loss with optional regularization penalty (CR mode).
+
+        Returns:
+            tuple: (total_loss, mse_loss, reg_loss) where losses are per-sample tensors.
+                   For non-CR mode, reg_loss is 0.
+        """
+        mse_loss = self.diffusion.train_losses(self.model, **self.get_input(x))
+        assert mse_loss.shape == (x.shape[0],)
+
+        # Add regularization penalty for CR mode
+        reg_loss = torch.zeros(1, device=self.device)
+        if self.reg_enabled and self.current_lambda > 0:
+            model = self._get_model()
+            if hasattr(model, 'get_group_l1_penalty'):
+                reg_loss = model.get_group_l1_penalty(self.current_lambda)
+
+        # Total loss = MSE + reg_penalty (distributed across batch)
+        total_loss = mse_loss + reg_loss / x.shape[0]
+
+        return total_loss, mse_loss, reg_loss
+
+    def step(self, x, global_steps=1):
+        """
+        Override: Training step with gradient accumulation for sparsity (CS mode).
+        Tracks MSE and reg losses separately for CR mode.
+        """
+        total_loss, mse_loss, reg_loss = self.loss(x)
+        loss = total_loss.mean()
+        loss.div(self.num_accum).backward()
+
+        # Accumulate gradients for sparse channel regrowth (CS mode)
+        if self.sparsity_enabled:
+            model = self._get_model()
+            if hasattr(model, 'accumulate_gradients'):
+                model.accumulate_gradients()
+
+        if global_steps % self.num_accum == 0:
+            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.grad_norm)
+            self.optimizer.step()
+            self.optimizer.zero_grad(set_to_none=True)
+            self.scheduler.step()
+            if self.use_ema and hasattr(self.ema, "update"):
+                self.ema.update()
+
+        # Detach losses for logging
+        loss = loss.detach()
+        mse_loss_mean = mse_loss.mean().detach()
+        reg_loss_val = reg_loss.detach()
+
+        if self.distributed:
+            dist.reduce(loss, dst=0, op=dist.ReduceOp.SUM)
+            dist.reduce(mse_loss_mean, dst=0, op=dist.ReduceOp.SUM)
+            dist.reduce(reg_loss_val, dst=0, op=dist.ReduceOp.SUM)
+            loss.div_(self.world_size)
+            mse_loss_mean.div_(self.world_size)
+            reg_loss_val.div_(self.world_size)
+
+        # Update stats - for CR mode, show separate mse and reg
+        if self.reg_enabled:
+            self.stats.update(
+                x.shape[0],
+                loss=loss.item() * x.shape[0],
+                mse=mse_loss_mean.item() * x.shape[0],
+                reg=reg_loss_val.item() * x.shape[0]
+            )
+        else:
+            self.stats.update(x.shape[0], loss=loss.item() * x.shape[0])
 
     def train(self, evaluator=None, chkpt_path=None, image_dir=None):
         """

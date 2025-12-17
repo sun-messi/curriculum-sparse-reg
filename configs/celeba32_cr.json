@@ -1,18 +1,27 @@
-// Mode C: Curriculum Only (UNet)
-//
+// Mode CR: Curriculum + Regularization (RegUNet with Group L1 on all Conv layers)
+
 // Usage:
 //   Single GPU:
-//     python train_curriculum.py --config-path configs/celeba32_c.json
-//
+//     python train_curriculum.py --config-path configs/celeba32_cr.json
+
 //   Multi-GPU (6 GPUs):
-//     python train_curriculum.py --config-path configs/celeba32_c.json --num-gpus 6 --distributed --rigid-launch
-//
+//     python train_curriculum.py --config-path configs/celeba32_cr.json --num-gpus 6 --distributed --rigid-launch
+
 //   Select specific GPUs (0,1,3,5):
-//     CUDA_VISIBLE_DEVICES=0,1,3,5 python train_curriculum.py --config-path configs/celeba32_c.json --num-gpus 4 --distributed --rigid-launch
-//
+//     CUDA_VISIBLE_DEVICES=0,1,3,5 python train_curriculum.py --config-path configs/celeba32_cr.json --num-gpus 4 --distributed --rigid-launch
+
 //   Using torchrun (elastic launch):
-//     torchrun --standalone --nproc_per_node 4 train_curriculum.py --config-path configs/celeba32_c.json --distributed
-//
+//     torchrun --standalone --nproc_per_node 4 train_curriculum.py --config-path configs/celeba32_cr.json --distributed
+
+// Lambda Schedule (linear decay):
+//   Stage 0: λ = 0.000030 (strong regularization)
+//   Stage 1: λ = 0.000023
+//   Stage 2: λ = 0.000015
+//   Stage 3: λ = 0.000008
+//   Stage 4: λ = 0.000000 (no regularization)
+
+// Loss Formula: L_total = MSE_loss + λ × Σ_layers Σ_c ||W[c,:,:,:]||_2
+
 {
   "dataset": "celeba32",
   "diffusion": {
@@ -59,7 +68,7 @@
     "regrowth_method": "gradient"
   },
   "regularization": {
-    "enabled": false,
+    "enabled": true,
     "lambda_max": 0.00003
   }
 }
