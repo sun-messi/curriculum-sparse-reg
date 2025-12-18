@@ -13,6 +13,23 @@
 //   Using torchrun (elastic launch):
 //     torchrun --standalone --nproc_per_node 4 train_curriculum.py --config-path configs/celeba64_c.json --distributed
 //
+// 10-Stage Curriculum (Logarithmic division):
+//   High noise region [0.2, 1.0]: 3 stages, coarse structure
+//   Low noise region [0.0, 0.2]: 7 stages, fine details (finer near t=0)
+//
+//   Stage | t_min | epochs | 说明
+//   ------|-------|--------|------
+//     0   |  0.5  |   1    | 粗糙结构
+//     1   |  0.3  |   1    |
+//     2   |  0.2  |   1    | ← 高噪区结束
+//     3   | 0.15  |   1    | 开始细节
+//     4   |  0.1  |   1    |
+//     5   | 0.07  |   2    |
+//     6   | 0.05  |   2    |
+//     7   | 0.03  |   2    |
+//     8   | 0.01  |   2    |
+//     9   |  0.0  |   2    | 最精细
+//
 {
   "dataset": "celeba",
   "diffusion": {
@@ -26,12 +43,13 @@
   },
   "model": {
     "in_channels": 3,
-    "hid_channels": 64,
+    "hid_channels": 32,
     "ch_multipliers": [1, 2, 2],
     "num_res_blocks": 2,
     "apply_attn": [false, false, false],
     "drop_rate": 0.0
   },
+
   "train": {
     "lr": 2e-4,
     "batch_size": 256,
@@ -46,11 +64,16 @@
   "curriculum": {
     "enabled": true,
     "stages": [
-      {"t_min": 0.8, "t_max": 1.0, "epochs": 1, "name": "stage1_high_noise"},
-      {"t_min": 0.6, "t_max": 1.0, "epochs": 1, "name": "stage2_expand"},
-      {"t_min": 0.4, "t_max": 1.0, "epochs": 1, "name": "stage3_expand"},
-      {"t_min": 0.2, "t_max": 1.0, "epochs": 2, "name": "stage4_expand"},
-      {"t_min": 0.0, "t_max": 1.0, "epochs": 5, "name": "stage5_full_range"}
+      {"t_min": 0.5,  "t_max": 1.0, "epochs": 1, "name": "stage0_coarse"},
+      {"t_min": 0.3,  "t_max": 1.0, "epochs": 1, "name": "stage1_coarse"},
+      {"t_min": 0.2,  "t_max": 1.0, "epochs": 1, "name": "stage2_coarse"},
+      {"t_min": 0.15, "t_max": 1.0, "epochs": 1, "name": "stage3_detail"},
+      {"t_min": 0.1,  "t_max": 1.0, "epochs": 1, "name": "stage4_detail"},
+      {"t_min": 0.07, "t_max": 1.0, "epochs": 2, "name": "stage5_fine"},
+      {"t_min": 0.05, "t_max": 1.0, "epochs": 2, "name": "stage6_fine"},
+      {"t_min": 0.03, "t_max": 1.0, "epochs": 2, "name": "stage7_finer"},
+      {"t_min": 0.01, "t_max": 1.0, "epochs": 2, "name": "stage8_finer"},
+      {"t_min": 0.0,  "t_max": 1.0, "epochs": 2, "name": "stage9_finest"}
     ]
   },
   "sparsity": {

@@ -13,12 +13,22 @@
 //   Using torchrun (elastic launch):
 //     torchrun --standalone --nproc_per_node 4 train_curriculum.py --config-path configs/celeba64_cs.json --distributed
 //
-// Sparsity Schedule (linear decay):
-//   Stage 0: 80% sparse (25/128 active)
-//   Stage 1: 60% sparse (51/128 active)
-//   Stage 2: 40% sparse (77/128 active)
-//   Stage 3: 20% sparse (102/128 active)
-//   Stage 4: 0% sparse  (128/128 active)
+// 10-Stage Sparsity Schedule (non-linear decay):
+//   High noise [0.2, 1.0]: Keep 80% sparsity (coarse features don't need capacity)
+//   Low noise [0.0, 0.2]: Rapid release (fine details need more channels)
+//
+//   Stage | t_min | sparsity | epochs | 说明
+//   ------|-------|----------|--------|------
+//     0   |  0.5  |   80%    |   1    | 粗糙结构
+//     1   |  0.3  |   80%    |   1    |
+//     2   |  0.2  |   80%    |   1    | ← 高噪区结束
+//     3   | 0.15  |   70%    |   1    | 开始释放
+//     4   |  0.1  |   60%    |   1    |
+//     5   | 0.07  |   50%    |   2    |
+//     6   | 0.05  |   40%    |   2    |
+//     7   | 0.03  |   25%    |   2    |
+//     8   | 0.01  |   10%    |   2    |
+//     9   |  0.0  |    0%    |   2    | 全开
 //
 {
   "dataset": "celeba",
@@ -33,7 +43,7 @@
   },
   "model": {
     "in_channels": 3,
-    "hid_channels": 64,
+    "hid_channels": 32,
     "ch_multipliers": [1, 2, 2],
     "num_res_blocks": 2,
     "apply_attn": [false, false, false],
@@ -41,7 +51,7 @@
   },
   "train": {
     "lr": 2e-4,
-    "batch_size": 128,
+    "batch_size": 256,
     "grad_norm": 1.0,
     "epochs": 100,
     "warmup": 5000,
@@ -53,11 +63,16 @@
   "curriculum": {
     "enabled": true,
     "stages": [
-      {"t_min": 0.8, "t_max": 1.0, "epochs": 1, "name": "stage1_high_noise"},
-      {"t_min": 0.6, "t_max": 1.0, "epochs": 1, "name": "stage2_expand"},
-      {"t_min": 0.4, "t_max": 1.0, "epochs": 1, "name": "stage3_expand"},
-      {"t_min": 0.2, "t_max": 1.0, "epochs": 2, "name": "stage4_expand"},
-      {"t_min": 0.0, "t_max": 1.0, "epochs": 5, "name": "stage5_full_range"}
+      {"t_min": 0.5,  "t_max": 1.0, "epochs": 1, "sparsity": 0.8,  "name": "stage0_coarse"},
+      {"t_min": 0.3,  "t_max": 1.0, "epochs": 1, "sparsity": 0.8,  "name": "stage1_coarse"},
+      {"t_min": 0.2,  "t_max": 1.0, "epochs": 1, "sparsity": 0.8,  "name": "stage2_coarse"},
+      {"t_min": 0.15, "t_max": 1.0, "epochs": 1, "sparsity": 0.7,  "name": "stage3_detail"},
+      {"t_min": 0.1,  "t_max": 1.0, "epochs": 1, "sparsity": 0.6,  "name": "stage4_detail"},
+      {"t_min": 0.07, "t_max": 1.0, "epochs": 2, "sparsity": 0.5,  "name": "stage5_fine"},
+      {"t_min": 0.05, "t_max": 1.0, "epochs": 2, "sparsity": 0.4,  "name": "stage6_fine"},
+      {"t_min": 0.03, "t_max": 1.0, "epochs": 2, "sparsity": 0.25, "name": "stage7_finer"},
+      {"t_min": 0.01, "t_max": 1.0, "epochs": 2, "sparsity": 0.1,  "name": "stage8_finer"},
+      {"t_min": 0.0,  "t_max": 1.0, "epochs": 2, "sparsity": 0.0,  "name": "stage9_finest"}
     ]
   },
   "sparsity": {

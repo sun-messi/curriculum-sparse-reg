@@ -62,6 +62,11 @@ class CurriculumTrainer(Trainer):
         self.current_stage = -1
         self.current_stage_name = "default"
 
+        # Soft curriculum mode (Beta distribution sampling)
+        self.soft_mode = self.curriculum_config.get("mode", "hard") == "soft"
+        self.current_alpha = 1.0
+        self.current_beta = 1.0
+
         # Sparsity configuration (CS mode)
         self.sparsity_config = sparsity_config or {}
         self.sparsity_enabled = self.sparsity_config.get("enabled", False)
@@ -86,12 +91,13 @@ class CurriculumTrainer(Trainer):
 
         # Log mode
         if self.is_leader:
+            mode_str = "soft" if self.soft_mode else "hard"
             if self.sparsity_enabled:
-                print(f"[Mode] CS - Curriculum + Sparsity (initial={self.initial_sparsity:.0%})")
+                print(f"[Mode] CS - Curriculum ({mode_str}) + Sparsity (initial={self.initial_sparsity:.0%})")
             elif self.reg_enabled:
-                print(f"[Mode] CR - Curriculum + Regularization (lambda_max={self.lambda_max})")
+                print(f"[Mode] CR - Curriculum ({mode_str}) + Regularization (lambda_max={self.lambda_max})")
             else:
-                print(f"[Mode] C - Curriculum only")
+                print(f"[Mode] C - Curriculum only ({mode_str})")
 
     def _build_stage_mapping(self):
         """Build mapping from epoch number to stage."""
@@ -124,31 +130,75 @@ class CurriculumTrainer(Trainer):
 
     def _get_sparsity_for_stage(self, stage_idx):
         """
-        Get target sparsity for given stage using linear decay.
+        Get target sparsity for given stage.
 
-        Formula: sparsity = initial * (num_stages - 1 - stage_idx) / (num_stages - 1)
-        Last stage is always 0 (all channels active).
+        Priority:
+        1. Use explicit "sparsity" field from stage config if present
+        2. Stage 0: keep initial_sparsity (no gradient history for regrow)
+        3. Non-linear decay based on t_min (concentrate decay in low noise region)
+
+        Non-linear decay logic:
+        - High noise region (t_min >= 0.2): keep initial_sparsity
+        - Low noise region (t_min < 0.2): sqrt decay for faster release
         """
         if not self.stages:
             return 0.0
-        num_stages = len(self.stages)
-        if num_stages <= 1:
-            return 0.0
-        return self.initial_sparsity * (num_stages - 1 - stage_idx) / (num_stages - 1)
+
+        stage = self.stages[stage_idx]
+
+        # Priority 1: Use explicit sparsity from config
+        if "sparsity" in stage:
+            return stage["sparsity"]
+
+        # Priority 2: Stage 0 keeps initial sparsity (no gradient history)
+        if stage_idx == 0:
+            return self.initial_sparsity
+
+        # Priority 3: Non-linear decay based on t_min
+        t_min = stage.get("t_min", 0.0)
+
+        if t_min >= 0.2:
+            # High noise region: keep initial sparsity
+            return self.initial_sparsity
+
+        # Low noise region [0, 0.2]: sqrt decay for faster release
+        # t_min=0.2 → sparsity=initial, t_min=0.0 → sparsity=0
+        progress = 1.0 - (t_min / 0.2)  # 0→1 as t_min: 0.2→0
+        return self.initial_sparsity * (1.0 - progress ** 0.5)
 
     def _get_lambda_for_stage(self, stage_idx):
         """
-        Get regularization lambda for given stage using linear decay.
+        Get regularization lambda for given stage.
 
-        Formula: lambda = lambda_max * (num_stages - 1 - stage_idx) / (num_stages - 1)
-        Last stage is always 0 (no regularization).
+        Priority:
+        1. Use explicit "lambda" field from stage config if present
+        2. Stage 0: keep lambda_max
+        3. Non-linear decay based on t_min (concentrate decay in low noise region)
         """
         if not self.stages:
             return 0.0
-        num_stages = len(self.stages)
-        if num_stages <= 1:
-            return 0.0
-        return self.lambda_max * (num_stages - 1 - stage_idx) / (num_stages - 1)
+
+        stage = self.stages[stage_idx]
+
+        # Priority 1: Use explicit lambda from config
+        if "lambda" in stage:
+            return stage["lambda"]
+
+        # Priority 2: Stage 0 keeps lambda_max
+        if stage_idx == 0:
+            return self.lambda_max
+
+        # Priority 3: Non-linear decay based on t_min
+        t_min = stage.get("t_min", 0.0)
+
+        if t_min >= 0.2:
+            # High noise region: keep lambda_max
+            return self.lambda_max
+
+        # Low noise region [0, 0.2]: sqrt decay for faster release
+        # t_min=0.2 → lambda=max, t_min=0.0 → lambda=0
+        progress = 1.0 - (t_min / 0.2)  # 0→1 as t_min: 0.2→0
+        return self.lambda_max * (1.0 - progress ** 0.5)
 
     def _update_curriculum(self, epoch):
         """Update diffusion time range, sparsity, and regularization based on epoch."""
@@ -160,18 +210,29 @@ class CurriculumTrainer(Trainer):
         if stage_idx != self.current_stage:
             self.current_stage = stage_idx
             stage = self.stages[stage_idx]
-            t_min = stage.get("t_min", 0.0)
-            t_max = stage.get("t_max", 1.0)
             self.current_stage_name = stage.get("name", f"stage_{stage_idx + 1}")
 
-            # Update diffusion time range
-            if hasattr(self.diffusion, 'set_time_range'):
-                self.diffusion.set_time_range(t_min, t_max)
+            if self.soft_mode:
+                # Soft curriculum: update alpha/beta for Beta distribution sampling
+                self.current_alpha = stage.get("alpha", 1.0)
+                self.current_beta = stage.get("beta", 1.0)
+                expected_t = self.current_alpha / (self.current_alpha + self.current_beta)
                 if self.is_leader:
-                    t_min_idx, t_max_idx = self.diffusion.get_time_range()
-                    print(f"\n[Curriculum] Stage {stage_idx + 1}/{len(self.stages)}: "
-                          f"t_range=[{t_min:.2f}, {t_max:.2f}] "
-                          f"(indices: [{t_min_idx}, {t_max_idx}])")
+                    print(f"\n[Curriculum] Stage {stage_idx + 1}/{len(self.stages)} "
+                          f"[{self.current_stage_name}]: "
+                          f"α={self.current_alpha:.1f}, β={self.current_beta:.1f} "
+                          f"(E[t/T]={expected_t:.3f})")
+            else:
+                # Hard curriculum: update time range
+                t_min = stage.get("t_min", 0.0)
+                t_max = stage.get("t_max", 1.0)
+                if hasattr(self.diffusion, 'set_time_range'):
+                    self.diffusion.set_time_range(t_min, t_max)
+                    if self.is_leader:
+                        t_min_idx, t_max_idx = self.diffusion.get_time_range()
+                        print(f"\n[Curriculum] Stage {stage_idx + 1}/{len(self.stages)}: "
+                              f"t_range=[{t_min:.2f}, {t_max:.2f}] "
+                              f"(indices: [{t_min_idx}, {t_max_idx}])")
 
             # Update sparsity if enabled (CS mode)
             if self.sparsity_enabled:
@@ -192,12 +253,21 @@ class CurriculumTrainer(Trainer):
 
     def get_input(self, x):
         """
-        Override: Sample timesteps within curriculum range.
+        Override: Sample timesteps based on curriculum mode.
+
+        - Soft mode: Use Beta distribution sampling (sample_timesteps_soft)
+        - Hard mode: Use uniform sampling within [t_min, t_max] (sample_timesteps)
         """
         x = x.to(self.device)
 
-        # Use curriculum-aware timestep sampling if available
-        if hasattr(self.diffusion, 'sample_timesteps'):
+        if self.soft_mode and hasattr(self.diffusion, 'sample_timesteps_soft'):
+            # Soft curriculum: Beta distribution sampling
+            t = self.diffusion.sample_timesteps_soft(
+                x.shape[0], self.device,
+                alpha=self.current_alpha, beta=self.current_beta
+            )
+        elif hasattr(self.diffusion, 'sample_timesteps'):
+            # Hard curriculum: uniform within [t_min, t_max]
             t = self.diffusion.sample_timesteps(
                 x.shape[0], self.device, generator=self.generator
             )
@@ -327,14 +397,31 @@ class CurriculumTrainer(Trainer):
 
             if not (e + 1) % self.image_intv and self.num_samples and image_dir:
                 self.model.eval()
-                x = self.sample_fn(
+                # Generate samples
+                generated = self.sample_fn(
                     sample_size=self.num_samples, sample_seed=self.sample_seed
                 ).cpu()
+
+                # Sample real images for comparison (half of num_samples)
+                num_real = self.num_samples // 2
+                real_indices = torch.randperm(len(self.trainloader.dataset))[:num_real]
+                real_images = []
+                for idx in real_indices:
+                    img = self.trainloader.dataset[idx]
+                    if isinstance(img, (list, tuple)):
+                        img = img[0]
+                    real_images.append(img)
+                real_images = torch.stack(real_images)
+
+                # Concatenate: generated (top) + real (bottom)
+                combined = torch.cat([generated, real_images], dim=0)
+                combined_nrow = nrow  # Same nrow, real images appear as extra rows
+
                 if self.is_leader:
                     # Include stage info in filename: s{stage}_{epoch}.jpg
                     stage_num = self.current_stage + 1 if self.current_stage >= 0 else 0
                     filename = f"s{stage_num}_{e + 1}.jpg"
-                    save_image(x, os.path.join(image_dir, filename), nrow=nrow)
+                    save_image(combined, os.path.join(image_dir, filename), nrow=combined_nrow)
 
             if not (e + 1) % self.chkpt_intv and chkpt_path:
                 self.model.eval()
@@ -350,6 +437,19 @@ class CurriculumTrainer(Trainer):
 
             if self.distributed:
                 dist.barrier()  # synchronize all processes here
+
+        # Save final checkpoint if not already saved at last epoch
+        if chkpt_path and (self.epochs % self.chkpt_intv != 0):
+            self.model.eval()
+            if evaluator is not None:
+                eval_results = evaluator.eval(self.sample_fn, is_leader=self.is_leader)
+            else:
+                eval_results = dict()
+            results.update(eval_results)
+            results["curriculum_stage"] = self.current_stage
+            if self.is_leader:
+                self.save_checkpoint(chkpt_path, epoch=self.epochs, **results)
+                print(f"[Curriculum] Saved final checkpoint at epoch {self.epochs}")
 
     def save_checkpoint(self, chkpt_path, **extra_info):
         """Override to include curriculum state."""

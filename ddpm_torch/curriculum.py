@@ -60,7 +60,7 @@ class CurriculumDiffusion(GaussianDiffusion):
 
     def sample_timesteps(self, batch_size, device, generator=None):
         """
-        Sample timesteps within curriculum range.
+        Sample timesteps within curriculum range (hard curriculum).
 
         Returns:
             Tensor of shape (batch_size,) with timesteps in [t_min, t_max)
@@ -73,3 +73,51 @@ class CurriculumDiffusion(GaussianDiffusion):
             device=device, dtype=torch.int64,
             generator=generator
         )
+
+    def sample_timesteps_soft(self, batch_size, device, alpha=1.0, beta=1.0):
+        """
+        Soft curriculum sampling using Beta distribution.
+
+        Unlike hard curriculum which restricts sampling to [t_min, t_max],
+        soft curriculum samples from the full range [0, T) but with
+        a probability distribution controlled by alpha and beta.
+
+        Formula:
+            t_normalized ~ Beta(α, β)
+            t = floor(t_normalized × T)
+
+        Args:
+            batch_size: Number of timesteps to sample
+            device: Target device
+            alpha: Beta distribution α parameter
+            beta: Beta distribution β parameter
+
+        Alpha/Beta effects:
+            α > β: Prefers high t (high noise) - E[t/T] > 0.5
+            α < β: Prefers low t (low noise)  - E[t/T] < 0.5
+            α = β = 1: Uniform distribution   - E[t/T] = 0.5
+
+        Examples:
+            α=5, β=1 → E[t] ≈ 833 (high noise preferred)
+            α=1, β=5 → E[t] ≈ 167 (low noise preferred)
+
+        Returns:
+            Tensor of shape (batch_size,) with timesteps in [0, T)
+        """
+        if alpha == 1.0 and beta == 1.0:
+            # Uniform sampling (avoid Beta overhead)
+            return torch.randint(
+                0, self.timesteps, (batch_size,),
+                device=device, dtype=torch.int64
+            )
+
+        # Sample from Beta distribution
+        dist = torch.distributions.Beta(
+            torch.tensor(alpha, device=device),
+            torch.tensor(beta, device=device)
+        )
+        samples = dist.sample((batch_size,))
+
+        # Scale to [0, timesteps-1]
+        timesteps = (samples * (self.timesteps - 1)).long()
+        return timesteps

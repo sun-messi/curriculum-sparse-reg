@@ -11,7 +11,7 @@
   },
   "model": {
     "in_channels": 3,
-    "hid_channels": 64,
+    "hid_channels": 32,
     "ch_multipliers": [1, 2, 2],
     "num_res_blocks": 2,
     "apply_attn": [false, true, false],
@@ -19,7 +19,7 @@
   },
   "train": {
     "lr": 2e-4,
-    "batch_size": 128,
+    "batch_size": 256,
     "grad_norm": 1.0,
     "epochs": 11,
     "warmup": 5000,

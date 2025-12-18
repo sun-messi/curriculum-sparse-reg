@@ -1,0 +1,7 @@
+FID Comparison for celeba32
+Samples: 1000, DDIM steps: 50
+------------------------------------------------------------
+celeba32 (baseline)                                34.82
+celeba32_cr (curriculum+regularization)           141.51
+celeba32_c (curriculum)                           145.18
+celeba32_cs (curriculum+sparsity)                 152.77
