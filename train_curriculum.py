@@ -210,7 +210,7 @@ def train(rank=0, args=None, temp_dir=""):
 
     chkpt_dir = os.path.join(args.chkpt_dir, exp_name)
     chkpt_path = os.path.join(chkpt_dir, args.chkpt_name or f"{exp_name}.pt")
-    chkpt_intv = args.chkpt_intv
+    chkpt_intv = train_config.chkpt_intv
     logger(f"Checkpoint will be saved to {os.path.abspath(chkpt_path)}", end=" ")
     logger(f"every {chkpt_intv} epoch(s)")
 
@@ -377,3 +377,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

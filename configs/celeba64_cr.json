@@ -45,36 +45,37 @@
   },
   "model": {
     "in_channels": 3,
-    "hid_channels": 32,
-    "ch_multipliers": [1, 2, 2],
+    "hid_channels": 128,
+    "ch_multipliers": [1, 2, 2, 2],
     "num_res_blocks": 2,
-    "apply_attn": [false, false, false],
+    "apply_attn": [false, false, true, false],
     "drop_rate": 0.0
   },
+
   "train": {
-    "lr": 2e-4,
-    "batch_size": 256,
+    "lr": 2e-5,
+    "batch_size": 128,
     "grad_norm": 1.0,
     "epochs": 100,
     "warmup": 5000,
     "use_ema": true,
     "ema_decay": 0.9999,
     "num_samples": 12,
-    "image_intv": 1
+    "image_intv": 1,
+    "chkpt_intv": 1
   },
   "curriculum": {
     "enabled": true,
     "stages": [
-      {"t_min": 0.5,  "t_max": 1.0, "epochs": 1, "lambda": 0.00003,  "name": "stage0_coarse"},
       {"t_min": 0.3,  "t_max": 1.0, "epochs": 1, "lambda": 0.00003,  "name": "stage1_coarse"},
       {"t_min": 0.2,  "t_max": 1.0, "epochs": 1, "lambda": 0.00003,  "name": "stage2_coarse"},
       {"t_min": 0.15, "t_max": 1.0, "epochs": 1, "lambda": 0.000024, "name": "stage3_detail"},
       {"t_min": 0.1,  "t_max": 1.0, "epochs": 1, "lambda": 0.000018, "name": "stage4_detail"},
-      {"t_min": 0.07, "t_max": 1.0, "epochs": 2, "lambda": 0.000012, "name": "stage5_fine"},
-      {"t_min": 0.05, "t_max": 1.0, "epochs": 2, "lambda": 0.000008, "name": "stage6_fine"},
-      {"t_min": 0.03, "t_max": 1.0, "epochs": 2, "lambda": 0.000004, "name": "stage7_finer"},
-      {"t_min": 0.01, "t_max": 1.0, "epochs": 2, "lambda": 0.000001, "name": "stage8_finer"},
-      {"t_min": 0.0,  "t_max": 1.0, "epochs": 2, "lambda": 0.0,      "name": "stage9_finest"}
+      {"t_min": 0.07, "t_max": 1.0, "epochs": 1, "lambda": 0.000012, "name": "stage5_fine"},
+      {"t_min": 0.05, "t_max": 1.0, "epochs": 1, "lambda": 0.000008, "name": "stage6_fine"},
+      {"t_min": 0.03, "t_max": 1.0, "epochs": 1, "lambda": 0.000004, "name": "stage7_finer"},
+      {"t_min": 0.01, "t_max": 1.0, "epochs": 1, "lambda": 0.000001, "name": "stage8_finer"},
+      {"t_min": 0.0,  "t_max": 1.0, "epochs": 12, "lambda": 0.0,      "name": "stage9_finest"}
     ]
   },
   "sparsity": {

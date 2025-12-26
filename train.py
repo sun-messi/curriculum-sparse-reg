@@ -145,7 +145,7 @@ def train(rank=0, args=None, temp_dir=""):
 
     chkpt_dir = os.path.join(args.chkpt_dir, exp_name)
     chkpt_path = os.path.join(chkpt_dir, args.chkpt_name or f"{exp_name}.pt")
-    chkpt_intv = args.chkpt_intv
+    chkpt_intv = train_config.chkpt_intv
     logger(f"Checkpoint will be saved to {os.path.abspath(chkpt_path)}", end=" ")
     logger(f"every {chkpt_intv} epoch(s)")
 
@@ -260,7 +260,7 @@ def main():
     parser.add_argument("--eval-device", default="cuda:0", type=str)
     parser.add_argument("--image-dir", default="./images", type=str)
     parser.add_argument("--image-intv", default=1, type=int)
-    parser.add_argument("--num-samples", default=20, type=int, help="number of images to sample and save")
+    parser.add_argument("--num-samples", default=12, type=int, help="number of images to sample and save")
     parser.add_argument("--config-dir", default="./configs", type=str)
     parser.add_argument("--chkpt-dir", default="./chkpts", type=str)
     parser.add_argument("--chkpt-name", default="", type=str)

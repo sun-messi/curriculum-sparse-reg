@@ -1,10 +1,17 @@
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
 import random
 import torch
 
-mpl.rcParams["figure.dpi"] = 144
+_MATPLOTLIB_ERROR = None
+try:
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+except Exception as err:  # pragma: no cover - optional dependency
+    mpl = None
+    plt = None
+    _MATPLOTLIB_ERROR = err
+else:
+    mpl.rcParams["figure.dpi"] = 144
 
 
 def dict2str(d, level=0, compact=True):
@@ -71,6 +78,12 @@ def infer_range(dataset):
 
 
 def save_scatterplot(fpath, x, y=None, xlim=None, ylim=None):
+    if plt is None:
+        raise RuntimeError(
+            "matplotlib is required for save_scatterplot but could not be imported. "
+            "Install a matplotlib build compatible with your NumPy version. "
+            f"Original error: {_MATPLOTLIB_ERROR}"
+        )
     if hasattr(x, "ndim"):
         x, y = split_squeeze(x) if x.ndim == 2 else (np.arange(len(x)), x)
     plt.figure(figsize=(6, 6))
@@ -99,3 +112,4 @@ class ConfigDict(dict):
 
     def __getattr__(self, name):
         return self.get(name, None)
+

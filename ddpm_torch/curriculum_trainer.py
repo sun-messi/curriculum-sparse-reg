@@ -418,9 +418,11 @@ class CurriculumTrainer(Trainer):
                 combined_nrow = nrow  # Same nrow, real images appear as extra rows
 
                 if self.is_leader:
-                    # Include stage info in filename: s{stage}_{epoch}.jpg
+                    # Include stage info in filename: s{stage}_{timestamp}_{epoch}.jpg
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     stage_num = self.current_stage + 1 if self.current_stage >= 0 else 0
-                    filename = f"s{stage_num}_{e + 1}.jpg"
+                    filename = f"s{stage_num}_{timestamp}_{e + 1}.jpg"
                     save_image(combined, os.path.join(image_dir, filename), nrow=combined_nrow)
 
             if not (e + 1) % self.chkpt_intv and chkpt_path:
@@ -453,6 +455,8 @@ class CurriculumTrainer(Trainer):
 
     def save_checkpoint(self, chkpt_path, **extra_info):
         """Override to include curriculum state."""
+        from datetime import datetime
+
         chkpt = []
         for k, v in self.named_state_dicts():
             chkpt.append((k, v))
@@ -461,11 +465,17 @@ class CurriculumTrainer(Trainer):
         chkpt.append(("curriculum_stage", self.current_stage))
         chkpt.append(("curriculum_config", self.curriculum_config))
 
+        # Add timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        chkpt.append(("timestamp", timestamp))
+
         for k, v in extra_info.items():
             chkpt.append((k, v))
 
         if "epoch" in extra_info:
-            chkpt_path = re.sub(r"(_\d+)?\.pt", f"_{extra_info['epoch']}.pt", chkpt_path)
+            # Include timestamp and epoch in filename: name_timestamp_epoch.pt
+            epoch = extra_info['epoch']
+            chkpt_path = re.sub(r"(_\d+)?\.pt", f"_{timestamp}_{epoch}.pt", chkpt_path)
         torch.save(dict(chkpt), chkpt_path)
 
     def load_checkpoint(self, chkpt_path, map_location):

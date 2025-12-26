@@ -10,3 +10,6 @@ precomputed
 figs
 images
 chkpts
+# Evaluation outputs
+generated/
+results/

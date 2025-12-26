@@ -218,7 +218,9 @@ class Trainer:
                 self.model.eval()
                 x = self.sample_fn(sample_size=self.num_samples, sample_seed=self.sample_seed).cpu()
                 if self.is_leader:
-                    save_image(x, os.path.join(image_dir, f"{e + 1}.jpg"), nrow=nrow)
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    save_image(x, os.path.join(image_dir, f"{timestamp}_{e + 1}.jpg"), nrow=nrow)
 
             if not (e + 1) % self.chkpt_intv and chkpt_path:
                 self.model.eval()
@@ -232,6 +234,17 @@ class Trainer:
 
             if self.distributed:
                 dist.barrier()  # synchronize all processes here
+
+        # Save final checkpoint if not already saved
+        if self.epochs > 0 and (self.epochs % self.chkpt_intv != 0) and chkpt_path:
+            self.model.eval()
+            if evaluator is not None:
+                eval_results = evaluator.eval(self.sample_fn, is_leader=self.is_leader)
+            else:
+                eval_results = dict()
+            results.update(eval_results)
+            if self.is_leader:
+                self.save_checkpoint(chkpt_path, epoch=self.epochs, **results)
 
     @property
     def trainees(self):
@@ -262,13 +275,23 @@ class Trainer:
         self.start_epoch = chkpt["epoch"]
 
     def save_checkpoint(self, chkpt_path, **extra_info):
+        from datetime import datetime
+
         chkpt = []
         for k, v in self.named_state_dicts():
             chkpt.append((k, v))
+
+        # Add timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        chkpt.append(("timestamp", timestamp))
+
         for k, v in extra_info.items():
             chkpt.append((k, v))
+
         if "epoch" in extra_info:
-            chkpt_path = re.sub(r"(_\d+)?\.pt", f"_{extra_info['epoch']}.pt", chkpt_path)
+            # Include timestamp and epoch in filename: name_timestamp_epoch.pt
+            epoch = extra_info['epoch']
+            chkpt_path = re.sub(r"(_\d+)?\.pt", f"_{timestamp}_{epoch}.pt", chkpt_path)
         torch.save(dict(chkpt), chkpt_path)
 
     def named_state_dicts(self):

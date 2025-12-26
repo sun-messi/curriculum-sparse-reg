@@ -1,0 +1,61 @@
+================================================================================
+U-ViT CelebA-64 FID Comparison (Three Training Methods)
+Last Updated: 2025-12-26 00:07:36
+Dataset: celeba
+Ref size: 5000 real images
+Evaluation Metric: FID (Fréchet Inception Distance, lower is better)
+================================================================================
+
+Checkpoint      |      Baseline  |  Curriculum (C) | Curriculum+Sparsity (CS)
+--------------------------------------------------------------------------------
+10000_ema       |         403.34 |          394.30 |                   423.58
+20000_ema       |         375.13 |          382.66 |                   412.58
+30000_ema       |         327.56 |          296.41 |                   378.33
+40000_ema       |         197.23 |          155.65 |                   432.11
+50000_ema       |         117.58 |          105.82 |                   344.56
+60000_ema       |          59.69 |           89.66 |                    90.01
+70000_ema       |          34.17 |           74.81 |                    75.63
+80000_ema       |          72.50 |           33.72 |                    39.20
+90000_ema       |          50.85 |           30.13 |                    34.41
+100000_ema      |          26.83 |           29.47 |                    32.35
+110000_ema      |          21.84 |                - |                    31.45
+120000_ema      |          20.78 |           30.51 |                    23.61
+130000_ema      |          20.52 |                - |                    25.05
+140000_ema      |          20.38 |           16.59 |                    17.01
+150000_ema      |          20.43 |                - |                    16.03
+160000_ema      |          20.19 |           15.00 |                    15.64
+170000_ema      |          20.14 |                - |                    15.60
+180000_ema      |          19.88 |           14.69 |                    15.55
+190000_ema      |          19.86 |           14.81 |                    15.67
+
+BEST FID:
+  Baseline:            19.86 @ 190k iterations
+  Curriculum (C):      14.69 @ 180k iterations
+  Curriculum+Sparsity: 15.55 @ 180k iterations
+
+================================================================================
+Source File Locations:
+================================================================================
+
+Baseline:
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small/20251225_225757
+  Timestamp: 2025-12-26 00:07:36
+  Example Images (100k checkpoint):
+    /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small/20251225_225757/100000_ema/0.png
+  Quality Note: Visual inspection shows images are clear with good detail
+
+Curriculum (C):
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_c_20251225_170001
+  Timestamp: 2025-12-25 20:29:38
+  Example Images (100k checkpoint):
+    /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_c_20251225_170001/100000_ema/0.png
+
+Curriculum + Sparsity (CS):
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs/20251225_202445
+  Timestamp: 2025-12-25 21:09:23
+  Example Images (100k checkpoint):
+    /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs/20251225_202445/100000_ema/0.png
+    /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs/20251225_183656/100000_ema/0.png
+  Quality Note: Visual inspection shows slightly lower quality compared to baseline (more blur, less detail)
+
+================================================================================

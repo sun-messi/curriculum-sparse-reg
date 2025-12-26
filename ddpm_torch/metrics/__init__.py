@@ -3,6 +3,7 @@ import torch
 from tqdm import trange
 from .fid_score import InceptionStatistics, get_precomputed, calc_fd
 from .precision_recall import ManifoldBuilder, Manifold, calc_pr
+from .inception_score import compute_inception_score, compute_is_from_folder
 
 __all__ = [
     "InceptionStatistics",
@@ -11,7 +12,9 @@ __all__ = [
     "ManifoldBuilder",
     "Manifold",
     "calc_pr",
-    "Evaluator"
+    "Evaluator",
+    "compute_inception_score",
+    "compute_is_from_folder",
 ]
 
 

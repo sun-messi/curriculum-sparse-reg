@@ -267,12 +267,12 @@ def get_activations(files, model, batch_size=50, dims=2048, device='cpu',
 
 
 def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
-    """Numpy implementation of the Frechet Distance.
+    """Numpy implementation of the Frechet Distance with GPU acceleration.
     The Frechet distance between two multivariate Gaussians X_1 ~ N(mu_1, C_1)
     and X_2 ~ N(mu_2, C_2) is
             d^2 = ||mu_1 - mu_2||^2 + Tr(C_1 + C_2 - 2*sqrt(C_1*C_2)).
 
-    Stable version by Dougal J. Sutherland.
+    Stable version by Dougal J. Sutherland, optimized with PyTorch GPU acceleration.
 
     Params:
     -- mu1   : Numpy array containing the activations of a layer of the
@@ -301,23 +301,50 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
 
     diff = mu1 - mu2
 
-    # Product might be almost singular
-    covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
-    if not np.isfinite(covmean).all():
-        msg = ('fid calculation produces singular product; '
-               'adding %s to diagonal of cov estimates') % eps
-        print(msg)
-        offset = np.eye(sigma1.shape[0]) * eps
-        covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
+    # Compute matrix square root using GPU-accelerated SVD
+    # For symmetric positive definite matrices A and B, we need sqrt(A @ B)
+    # Use the method: sqrt(A @ B) via SVD decomposition for numerical stability
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
 
-    # Numerical error might give slight imaginary component
-    if np.iscomplexobj(covmean):
-        if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
-            m = np.max(np.abs(covmean.imag))
-            raise ValueError('Imaginary component {}'.format(m))
-        covmean = covmean.real
+        # Convert to torch tensors (use float64 for numerical stability)
+        sigma1_t = torch.from_numpy(sigma1).double().to(device)
+        sigma2_t = torch.from_numpy(sigma2).double().to(device)
 
-    tr_covmean = np.trace(covmean)
+        # Compute sqrt(sigma1) using eigendecomposition (sigma1 is symmetric)
+        eigvals1, eigvecs1 = torch.linalg.eigh(sigma1_t)
+        eigvals1 = torch.clamp(eigvals1, min=0)  # Ensure non-negative
+        sqrt_sigma1 = eigvecs1 @ torch.diag(torch.sqrt(eigvals1)) @ eigvecs1.T
+
+        # Compute the product: sqrt(sigma1) @ sigma2 @ sqrt(sigma1)
+        # This is symmetric positive definite
+        M = sqrt_sigma1 @ sigma2_t @ sqrt_sigma1
+
+        # Compute sqrt(M) using eigendecomposition
+        eigvals_M, eigvecs_M = torch.linalg.eigh(M)
+        eigvals_M = torch.clamp(eigvals_M, min=0)
+        sqrt_M = eigvecs_M @ torch.diag(torch.sqrt(eigvals_M)) @ eigvecs_M.T
+
+        # The trace we need: trace(sqrt(sigma1 @ sigma2))
+        tr_covmean = torch.trace(sqrt_M).cpu().item()
+    else:
+        # Fallback to CPU scipy for compatibility
+        covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
+        if not np.isfinite(covmean).all():
+            msg = ('fid calculation produces singular product; '
+                   'adding %s to diagonal of cov estimates') % eps
+            print(msg)
+            offset = np.eye(sigma1.shape[0]) * eps
+            covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
+
+        # Numerical error might give slight imaginary component
+        if np.iscomplexobj(covmean):
+            if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
+                m = np.max(np.abs(covmean.imag))
+                raise ValueError('Imaginary component {}'.format(m))
+            covmean = covmean.real
+
+        tr_covmean = np.trace(covmean)
 
     return (diff.dot(diff) + np.trace(sigma1)
             + np.trace(sigma2) - 2 * tr_covmean)
