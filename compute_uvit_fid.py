@@ -4,7 +4,7 @@ Compute FID scores for U-ViT generated samples.
 Usage:
 
 python compute_uvit_fid.py \
-  --uvit-dir /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs/20251225_202445 \
+  --uvit-dir /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_c/20251226_042556 \
   --dataset celeba \
   --device cuda:0 \
   --ref-size 5000
