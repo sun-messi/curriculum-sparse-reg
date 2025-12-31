@@ -208,13 +208,16 @@ def train(rank=0, args=None, temp_dir=""):
         args.chkpt_intv = 1
         args.image_intv = 1
 
-    chkpt_dir = os.path.join(args.chkpt_dir, exp_name)
+    # Create timestamped subdirectory for this training run
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    chkpt_base_dir = os.path.join(args.chkpt_dir, exp_name)
+    chkpt_dir = os.path.join(chkpt_base_dir, run_timestamp)
     chkpt_path = os.path.join(chkpt_dir, args.chkpt_name or f"{exp_name}.pt")
     chkpt_intv = train_config.chkpt_intv
     logger(f"Checkpoint will be saved to {os.path.abspath(chkpt_path)}", end=" ")
     logger(f"every {chkpt_intv} epoch(s)")
 
-    image_dir = os.path.join(args.image_dir, "train", exp_name)
+    image_dir = os.path.join(chkpt_dir, "generated")
     logger(f"Generated images (x{train_config.num_samples}) will be saved to {os.path.abspath(image_dir)}", end=" ")
     logger(f"every {train_config.image_intv} epoch(s)")
 
@@ -230,12 +233,11 @@ def train(rank=0, args=None, temp_dir=""):
             "sparsity": sparsity_config,
             "regularization": reg_config
         }
-        timestamp = datetime.now().strftime("%Y-%m-%dT%H%M%S%f")
 
         if not os.path.exists(chkpt_dir):
             os.makedirs(chkpt_dir)
         # keep a record of hyperparameter settings used for this experiment run
-        with open(os.path.join(chkpt_dir, f"exp_{timestamp}.info"), "w") as f:
+        with open(os.path.join(chkpt_dir, f"config.json"), "w") as f:
             json.dump(hps, f, indent=2)
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)

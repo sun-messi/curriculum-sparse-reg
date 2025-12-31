@@ -9,103 +9,79 @@ from PIL import Image
 import os
 from matplotlib.gridspec import GridSpec
 
-# Data from results
-steps = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200]
-steps_k = [s * 1000 for s in steps]
+# Data from results - Updated 2025-12-26
+steps_full = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120]
+steps_k_full = [s * 1000 for s in steps_full]
 
-# FID scores for the three best methods
-cs = [422.93, 411.90, 377.10, 430.50, 343.50, 90.19, 75.70, 39.41, 34.66, 32.52,
-      31.68, 23.88, 25.42, 17.32, 16.31, 15.90, 15.84, 15.81, 15.90, None]
-
-curriculum_new = [393.74, 382.04, 296.81, 155.92, 105.68, 89.22, 74.27, 63.97, 47.74, 40.27,
-                  None, 29.99, None, 16.27, None, 14.80, None, 14.48, 14.56, None]
-
-baseline_new = [401.06, 371.21, 319.34, 187.71, 111.15, 54.62, 28.90, 67.40, 45.64, 21.52,
-                None, 15.00, None, 14.49, None, 14.33, None, 13.94, 13.93, None]
+baseline_modified_full = [402.39, 364.07, 339.82, 178.20, 100.95, 95.91, 90.87, 85.83, 61.25, 35.97, 27.28]
+curriculum_full = [393.93, 382.88, 292.35, 170.63, 126.90, 95.68, 43.87, 33.72, 30.13, 29.47, 32.47]
+cs_mode_full = [422.93, 411.90, 377.10, 430.50, 343.50, 90.19, 75.70, 39.41, 34.66, 32.52, 23.88]
 
 # Create figure with GridSpec for FID curve + sample images
-fig = plt.figure(figsize=(20, 14))
-gs = GridSpec(5, 1, height_ratios=[3, 1, 1, 1, 0.3], hspace=0.35)
+fig = plt.figure(figsize=(28, 18))
+gs = GridSpec(4, 5, height_ratios=[2, 1.7, 1.7, 1.7], hspace=0.2, wspace=0.08)
 
-# Top: FID curve
-ax = fig.add_subplot(gs[0])
+# Top: FID curve (spanning all columns)
+ax = fig.add_subplot(gs[0, :])
 
-# Filter out None values for plotting
-def filter_data(steps, values):
-    filtered_steps = []
-    filtered_values = []
-    for s, v in zip(steps, values):
-        if v is not None:
-            filtered_steps.append(s)
-            filtered_values.append(v)
-    return filtered_steps, filtered_values
+# Plot all data from 50k onwards
+start_step = 50000
+mask = [s >= start_step for s in steps_k_full]
+steps_k = [s for s, m in zip(steps_k_full, mask) if m]
+baseline_modified = [v for v, m in zip(baseline_modified_full, mask) if m]
+curriculum = [v for v, m in zip(curriculum_full, mask) if m]
+cs_mode = [v for v, m in zip(cs_mode_full, mask) if m]
 
-cs_steps, cs_fid = filter_data(steps_k, cs)
-curriculum_new_steps, curriculum_new_fid = filter_data(steps_k, curriculum_new)
-baseline_new_steps, baseline_new_fid = filter_data(steps_k, baseline_new)
-
-# Plot with distinct colors and styles
-ax.plot(cs_steps, cs_fid, '^-', linewidth=2.5, markersize=8,
+ax.plot(steps_k, baseline_modified, 'o-', linewidth=2.5, markersize=8,
+        label='Baseline (Modified)', color='#1f77b4', alpha=0.8)
+ax.plot(steps_k, curriculum, 's-', linewidth=2.5, markersize=8,
+        label='Curriculum', color='#ff7f0e', alpha=0.8)
+ax.plot(steps_k, cs_mode, '^-', linewidth=2.5, markersize=8,
         label='CS Mode', color='#2ca02c', alpha=0.8)
-ax.plot(curriculum_new_steps, curriculum_new_fid, 's-', linewidth=2.5, markersize=8,
-        label='Curriculum (new)', color='#ff7f0e', alpha=0.8)
-ax.plot(baseline_new_steps, baseline_new_fid, 'o-', linewidth=2.5, markersize=8,
-        label='Baseline (new)', color='#1f77b4', alpha=0.8)
 
 # Highlight best points
-best_cs_idx = cs_fid.index(min(cs_fid))
-best_curriculum_new_idx = curriculum_new_fid.index(min(curriculum_new_fid))
-best_baseline_new_idx = baseline_new_fid.index(min(baseline_new_fid))
+best_baseline_idx = baseline_modified.index(min(baseline_modified))
+best_curriculum_idx = curriculum.index(min(curriculum))
+best_cs_idx = cs_mode.index(min(cs_mode))
 
-ax.scatter([cs_steps[best_cs_idx]], [cs_fid[best_cs_idx]],
-           s=200, marker='*', color='#2ca02c', edgecolors='black', linewidths=2,
-           zorder=5, label=f'Best CS: {cs_fid[best_cs_idx]:.2f}')
-ax.scatter([curriculum_new_steps[best_curriculum_new_idx]], [curriculum_new_fid[best_curriculum_new_idx]],
-           s=200, marker='*', color='#ff7f0e', edgecolors='black', linewidths=2,
-           zorder=5, label=f'Best Curriculum: {curriculum_new_fid[best_curriculum_new_idx]:.2f}')
-ax.scatter([baseline_new_steps[best_baseline_new_idx]], [baseline_new_fid[best_baseline_new_idx]],
+ax.scatter([steps_k[best_baseline_idx]], [baseline_modified[best_baseline_idx]],
            s=200, marker='*', color='#1f77b4', edgecolors='black', linewidths=2,
-           zorder=5, label=f'Best Baseline: {baseline_new_fid[best_baseline_new_idx]:.2f}')
+           zorder=5, label=f'Best Baseline: {baseline_modified[best_baseline_idx]:.2f}')
+ax.scatter([steps_k[best_curriculum_idx]], [curriculum[best_curriculum_idx]],
+           s=200, marker='*', color='#ff7f0e', edgecolors='black', linewidths=2,
+           zorder=5, label=f'Best Curriculum: {curriculum[best_curriculum_idx]:.2f}')
+ax.scatter([steps_k[best_cs_idx]], [cs_mode[best_cs_idx]],
+           s=200, marker='*', color='#2ca02c', edgecolors='black', linewidths=2,
+           zorder=5, label=f'Best CS: {cs_mode[best_cs_idx]:.2f}')
 
 # Styling
 ax.set_xlabel('Training Steps', fontsize=14, fontweight='bold')
 ax.set_ylabel('FID Score (lower is better)', fontsize=14, fontweight='bold')
-ax.set_title('U-ViT Final Comparison: Top 3 Methods\\nFID Convergence on CelebA 64×64',
+ax.set_title('U-ViT Final Comparison: Top 3 Methods\nFID Convergence on CelebA 64×64',
              fontsize=16, fontweight='bold', pad=20)
 
-# Grid
 ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
 ax.set_axisbelow(True)
+ax.legend(loc='upper right', fontsize=10, framealpha=0.95, edgecolor='black')
 
-# Legend
-ax.legend(loc='upper right', fontsize=11, framealpha=0.95, edgecolor='black')
-
-# Y-axis limit for better visualization
-ax.set_ylim([0, 450])
+# Y-axis limit
+ax.set_ylim([0, 400])
 
 # Format x-axis
-ax.set_xlim([0, 200000])
-ax.set_xticks([0, 50000, 100000, 150000, 200000])
-ax.set_xticklabels(['0', '50k', '100k', '150k', '200k'])
+ax.set_xlim([50000, 120000])
+ax.set_xticks([50000, 60000, 70000, 80000, 90000, 100000, 110000, 120000])
+ax.set_xticklabels(['50k', '60k', '70k', '80k', '90k', '100k', '110k', '120k'])
 
-# Add annotation for the winner
-ax.annotate('NEW CHAMPION!\\nBaseline: 13.93',
-            xy=(baseline_new_steps[best_baseline_new_idx], baseline_new_fid[best_baseline_new_idx]),
-            xytext=(baseline_new_steps[best_baseline_new_idx] - 30000, 60),
-            fontsize=12, fontweight='bold', color='#1f77b4',
-            bbox=dict(boxstyle='round,pad=0.6', facecolor='white', edgecolor='#1f77b4', linewidth=2.5),
-            arrowprops=dict(arrowstyle='->', color='#1f77b4', lw=2.5, connectionstyle='arc3,rad=0.3'))
-
-# Sample image paths - key checkpoints to show
-sample_checkpoints = [40000, 80000, 120000, 160000, 180000, 190000]
+# Sample image paths - show 50k, 70k, 80k, 100k, 120k checkpoints
+sample_checkpoints = [50000, 70000, 80000, 100000, 120000]
 base_dirs = {
-    'Curriculum (new)': '/home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_c_20251225_170001',
-    'CS': '/home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs',
-    'Baseline (new)': '/home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small/20251225_172649'
+    'Baseline (Modified)': '/home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small/20251225_225757',
+    'Curriculum': '/home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_c/20251226_042556',
+    'CS Mode': '/home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs/20251226_035545'
 }
 
-def load_sample_grid(checkpoint_dir, num_samples=16):
-    """Load and create a grid of sample images"""
+def load_sample_grid(checkpoint_dir, num_samples=25):
+    """Load and create a grid of sample images (5x5 grid)"""
     if not os.path.exists(checkpoint_dir):
         return None
 
@@ -130,8 +106,8 @@ def load_sample_grid(checkpoint_dir, num_samples=16):
     if len(imgs) == 0:
         return None
 
-    # Create grid
-    grid_size = int(np.sqrt(len(imgs)))
+    # Create 5x5 grid
+    grid_size = 5
     h, w = imgs[0].shape[:2]
     grid = np.zeros((grid_size * h, grid_size * w, 3), dtype=np.uint8)
 
@@ -142,93 +118,33 @@ def load_sample_grid(checkpoint_dir, num_samples=16):
 
     return grid
 
-# Row 1: CS samples
-ax_cs = fig.add_subplot(gs[1])
-ax_cs.axis('off')
-ax_cs.text(0.01, 0.95, 'CS Mode', transform=ax_cs.transAxes,
-          fontsize=12, fontweight='bold', va='top',
-          bbox=dict(boxstyle='round', facecolor='#2ca02c', alpha=0.3))
+# Row labels
+row_labels = ['Baseline (Modified)', 'Curriculum', 'CS Mode']
+row_colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
 
-# Row 2: Curriculum (new) samples
-ax_curr = fig.add_subplot(gs[2])
-ax_curr.axis('off')
-ax_curr.text(0.01, 0.95, 'Curriculum (new)', transform=ax_curr.transAxes,
-            fontsize=12, fontweight='bold', va='top',
-            bbox=dict(boxstyle='round', facecolor='#ff7f0e', alpha=0.3))
+# Display sample images in grid
+for row_idx, (method, color) in enumerate(zip(row_labels, row_colors)):
+    for col_idx, ckpt in enumerate(sample_checkpoints):
+        ax_img = fig.add_subplot(gs[row_idx + 1, col_idx])
+        ax_img.axis('off')
 
-# Row 3: Baseline (new) samples
-ax_base = fig.add_subplot(gs[3])
-ax_base.axis('off')
-ax_base.text(0.01, 0.95, 'Baseline (new)', transform=ax_base.transAxes,
-            fontsize=12, fontweight='bold', va='top',
-            bbox=dict(boxstyle='round', facecolor='#1f77b4', alpha=0.3))
+        # Add label for first column
+        if col_idx == 0:
+            ax_img.text(-0.1, 0.5, method, transform=ax_img.transAxes,
+                       fontsize=11, fontweight='bold', va='center', ha='right',
+                       rotation=90)
 
-# Load and display samples - create horizontal concatenation
-sample_grids = {'cs': [], 'curr': [], 'base': []}
+        # Add checkpoint label for first row
+        if row_idx == 0:
+            ax_img.text(0.5, 1.05, f'{ckpt//1000}k steps', transform=ax_img.transAxes,
+                       fontsize=11, fontweight='bold', va='bottom', ha='center')
 
-for ckpt in sample_checkpoints:
-    # CS samples
-    cs_dir = os.path.join(base_dirs['CS'], f'{ckpt}_ema')
-    cs_grid = load_sample_grid(cs_dir, num_samples=16)
-    if cs_grid is not None:
-        sample_grids['cs'].append(cs_grid)
+        # Load and display image
+        checkpoint_dir = os.path.join(base_dirs[method], f'{ckpt}_ema')
+        grid = load_sample_grid(checkpoint_dir, num_samples=25)
 
-    # Curriculum (new) samples
-    curr_dir = os.path.join(base_dirs['Curriculum (new)'], f'{ckpt}_ema')
-    curr_grid = load_sample_grid(curr_dir, num_samples=16)
-    if curr_grid is not None:
-        sample_grids['curr'].append(curr_grid)
-
-    # Baseline (new) samples
-    base_dir = os.path.join(base_dirs['Baseline (new)'], f'{ckpt}_ema')
-    base_grid = load_sample_grid(base_dir, num_samples=16)
-    if base_grid is not None:
-        sample_grids['base'].append(base_grid)
-
-# Concatenate grids horizontally with spacing between checkpoints
-def concat_with_spacing(grids, spacing=10):
-    """Concatenate grids horizontally with white spacing between them"""
-    if not grids:
-        return None
-
-    h = grids[0].shape[0]
-    # Create white spacer
-    spacer = np.ones((h, spacing, 3), dtype=np.uint8) * 255
-
-    # Interleave grids with spacers
-    result = []
-    for i, grid in enumerate(grids):
-        result.append(grid)
-        if i < len(grids) - 1:  # Don't add spacer after last grid
-            result.append(spacer)
-
-    return np.concatenate(result, axis=1)
-
-if sample_grids['cs']:
-    cs_concat = concat_with_spacing(sample_grids['cs'], spacing=20)
-    ax_cs.imshow(cs_concat, interpolation='bilinear')
-
-if sample_grids['curr']:
-    curr_concat = concat_with_spacing(sample_grids['curr'], spacing=20)
-    ax_curr.imshow(curr_concat, interpolation='bilinear')
-
-if sample_grids['base']:
-    base_concat = concat_with_spacing(sample_grids['base'], spacing=20)
-    ax_base.imshow(base_concat, interpolation='bilinear')
-
-# Row 4: Unified checkpoint labels at the bottom (shared across all three rows)
-ax_labels = fig.add_subplot(gs[4])
-ax_labels.axis('off')
-ax_labels.set_xlim([0, 1])
-ax_labels.set_ylim([0, 1])
-
-# Add unified checkpoint labels
-n_checkpoints = len(sample_checkpoints)
-for i, ckpt in enumerate(sample_checkpoints):
-    x_pos = (i + 0.5) / n_checkpoints
-    ax_labels.text(x_pos, 0.5, f'{ckpt//1000}k',
-                  ha='center', va='center', fontsize=12, fontweight='bold',
-                  transform=ax_labels.transAxes)
+        if grid is not None:
+            ax_img.imshow(grid, interpolation='bilinear')
 
 plt.savefig('results/final_three_way_comparison.png', dpi=300, bbox_inches='tight')
 print("Saved to results/final_three_way_comparison.png")

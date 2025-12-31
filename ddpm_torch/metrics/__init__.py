@@ -4,6 +4,7 @@ from tqdm import trange
 from .fid_score import InceptionStatistics, get_precomputed, calc_fd
 from .precision_recall import ManifoldBuilder, Manifold, calc_pr
 from .inception_score import compute_inception_score, compute_is_from_folder
+from .niqe_score import compute_niqe_from_folder, compute_niqe_single_image
 
 __all__ = [
     "InceptionStatistics",
@@ -15,6 +16,8 @@ __all__ = [
     "Evaluator",
     "compute_inception_score",
     "compute_is_from_folder",
+    "compute_niqe_from_folder",
+    "compute_niqe_single_image",
 ]
 
 

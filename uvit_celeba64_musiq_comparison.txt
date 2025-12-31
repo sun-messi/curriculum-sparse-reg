@@ -1,0 +1,60 @@
+================================================================================
+U-ViT CelebA-64 MUSIQ Comparison (All Checkpoints)
+Last Updated: 2025-12-26 09:02:53
+Dataset: celeba
+Images per checkpoint: ~5000 generated images
+Evaluation Metric: MUSIQ (Multi-Scale Image Quality Transformer, higher is better)
+================================================================================
+
+Checkpoint      |        Baseline |  Curriculum (C) |  Curriculum+Sparsity (CS) |
+--------------------------------------------------------------------------------
+10000_ema       |         30.2953 |         30.0712 |         29.8415 |
+20000_ema       |         33.3334 |         30.9491 |         30.1977 |
+30000_ema       |         17.3377 |         21.6638 |         31.7015 |
+40000_ema       |         17.1272 |         16.6145 |         26.4409 |
+50000_ema       |         16.8049 |         16.4135 |         21.9770 |
+60000_ema       |         19.4280 |         18.1544 |         17.0565 |
+70000_ema       |         20.5092 |         19.2875 |         18.2155 |
+80000_ema       |         21.2231 |         19.4214 |         20.6935 |
+90000_ema       |         21.7090 |         20.8613 |         20.9884 |
+100000_ema      |         22.3387 |         21.2559 |         22.8671 |
+110000_ema      |         22.7133 |         23.3234 |         23.1645 |
+120000_ema      |         22.8963 |         23.4074 |         23.1050 |
+130000_ema      |         23.0455 |         23.0972 |         22.9922 |
+140000_ema      |         23.1056 |         22.8511 |         22.8694 |
+150000_ema      |         23.1572 |         22.7970 |         22.8942 |
+160000_ema      |         23.2020 |         22.8855 |         22.8277 |
+170000_ema      |         23.1904 |         22.9354 |         22.8246 |
+180000_ema      |         23.1859 |         22.9679 |         22.8186 |
+190000_ema      |         23.1920 |         23.0461 |         22.8138 |
+
+BEST MUSIQ (higher is better):
+  Baseline                       33.3334 @ 20k iterations
+  Curriculum (C)                 30.9491 @ 20k iterations
+  Curriculum+Sparsity (CS)       31.7015 @ 30k iterations
+
+Results Analysis:
+  • Curriculum (C) average improvement over Baseline: -1.4%
+  • Curriculum+Sparsity (CS) average improvement over Baseline: +4.3%
+
+Note: MUSIQ (Multi-Scale Image Quality Transformer) is a Vision Transformer-based
+      no-reference metric designed to handle images of various resolutions.
+      Higher scores indicate better perceptual quality.
+
+================================================================================
+Source File Locations:
+================================================================================
+
+Baseline:
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small/20251226_025347
+  Timestamp: 2025-12-26 03:19:27
+
+Curriculum (C):
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_c/20251226_042556
+  Timestamp: 2025-12-26 04:52:33
+
+Curriculum+Sparsity (CS):
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs/20251226_035545
+  Timestamp: 2025-12-26 04:21:29
+
+================================================================================

@@ -1,4 +1,4 @@
-// Mode CR: Curriculum + Regularization (RegUNet with Group L1 on all Conv layers) - 32x32
+// Mode CR: Curriculum + Regularization (RegUNet with Group L1 on bottleneck-adjacent layers) - 32x32
 //
 // Usage:
 //   Single GPU:
@@ -7,24 +7,25 @@
 //   Multi-GPU (6 GPUs):
 //     python train_curriculum.py --config-path configs/celeba32_cr.json --num-gpus 6 --distributed --rigid-launch
 //
-// 10-Stage Lambda Schedule (non-linear decay):
-//   High noise [0.2, 1.0]: Keep strong regularization
-//   Low noise [0.0, 0.2]: Rapid decay (fine details need full capacity)
+// 9-Stage Lambda Schedule (gradual decay):
+//   High noise [0.2, 1.0]: Strong regularization with gradual decrease
+//   Mid noise [0.07, 0.2]: Progressive relaxation
+//   Low noise [0.0, 0.07]: Rapid decay to zero
 //
 //   Stage | t_min | lambda   | epochs | 说明
 //   ------|-------|----------|--------|------
-//     0   |  0.5  | 0.000030 |   1    | 强正则
-//     1   |  0.3  | 0.000030 |   1    |
-//     2   |  0.2  | 0.000030 |   1    | ← 高噪区结束
-//     3   | 0.15  | 0.000024 |   1    | 开始衰减
-//     4   |  0.1  | 0.000018 |   1    |
-//     5   | 0.07  | 0.000012 |   2    |
-//     6   | 0.05  | 0.000008 |   2    |
-//     7   | 0.03  | 0.000004 |   2    |
-//     8   | 0.01  | 0.000001 |   2    |
-//     9   |  0.0  | 0.000000 |   2    | 无正则
+//     0   |  0.3  | 0.001200 |   1    | 强正则 (20x increase)
+//     1   |  0.2  | 0.001000 |   1    | 缓降
+//     2   | 0.15  | 0.000800 |   1    | 逐步放松
+//     3   |  0.1  | 0.000600 |   1    |
+//     4   | 0.07  | 0.000400 |   2    |
+//     5   | 0.05  | 0.000200 |   2    | 快速下降
+//     6   | 0.03  | 0.000100 |   2    |
+//     7   | 0.01  | 0.000040 |   2    |
+//     8   |  0.0  | 0.000000 |   4    | 无正则
 //
-// Loss Formula: L_total = MSE_loss + λ × Σ_layers Σ_c ||W[c,:,:,:]||_2
+// Loss Formula: L_total = MSE_loss + λ × Σ_c ||W[c,:,:,:]||_2
+//   where layers = {downsamples.level_3[1].conv1, downsamples.level_3[1].conv2} (last ResBlock before bottleneck)
 //
 {
   "dataset": "celeba32",
@@ -39,34 +40,36 @@
   },
   "model": {
     "in_channels": 3,
-    "hid_channels": 32,
+    "hid_channels": 128,
     "ch_multipliers": [1, 2, 2, 2],
     "num_res_blocks": 2,
-    "apply_attn": [false, false, false, false],
+    "apply_attn": [false, false, true, false],
     "drop_rate": 0.0
   },
   "train": {
     "lr": 2e-4,
-    "batch_size": 256,
+    "batch_size": 128,
     "grad_norm": 1.0,
     "epochs": 100,
     "warmup": 5000,
     "use_ema": true,
     "ema_decay": 0.9999,
-    "num_samples": 12,
-    "image_intv": 1
+    "num_samples": 24,
+    "image_intv": 1,
+    "chkpt_intv": 1
   },
   "curriculum": {
     "enabled": true,
     "stages": [
-      {"t_min": 0.2,  "t_max": 1.0, "epochs": 1, "lambda": 0.00003,  "name": "stage0_coarse"},
-      {"t_min": 0.15, "t_max": 1.0, "epochs": 1, "lambda": 0.000024, "name": "stage3_detail"},
-      {"t_min": 0.1,  "t_max": 1.0, "epochs": 1, "lambda": 0.000018, "name": "stage4_detail"},
-      {"t_min": 0.07, "t_max": 1.0, "epochs": 2, "lambda": 0.000012, "name": "stage5_fine"},
-      {"t_min": 0.05, "t_max": 1.0, "epochs": 2, "lambda": 0.000008, "name": "stage6_fine"},
-      {"t_min": 0.03, "t_max": 1.0, "epochs": 2, "lambda": 0.000002, "name": "stage7_finer"},
-      {"t_min": 0.01, "t_max": 1.0, "epochs": 2, "lambda": 0.000000, "name": "stage8_finer"},
-      {"t_min": 0.0,  "t_max": 1.0, "epochs": 4, "lambda": 0.0,      "name": "stage9_finest"}
+      {"t_min": 0.3,  "t_max": 1.0, "epochs": 1, "lambda": 0.0012,  "name": "stage0_coarse"},
+      {"t_min": 0.2,  "t_max": 1.0, "epochs": 1, "lambda": 0.0008,   "name": "stage1_coarse"},
+      {"t_min": 0.15, "t_max": 1.0, "epochs": 1, "lambda": 0.00005,  "name": "stage2_detail"},
+      {"t_min": 0.1,  "t_max": 1.0, "epochs": 1, "lambda": 0.00003,  "name": "stage3_detail"},
+      {"t_min": 0.07, "t_max": 1.0, "epochs": 2, "lambda": 0.00001,  "name": "stage4_fine"},
+      {"t_min": 0.05, "t_max": 1.0, "epochs": 2, "lambda": 0.000,  "name": "stage5_fine"},
+      {"t_min": 0.03, "t_max": 1.0, "epochs": 2, "lambda": 0.000,  "name": "stage6_finer"},
+      {"t_min": 0.01, "t_max": 1.0, "epochs": 2, "lambda": 0.000, "name": "stage7_finer"},
+      {"t_min": 0.0,  "t_max": 1.0, "epochs": 4, "lambda": 0.0,     "name": "stage8_finest"}
     ]
   },
   "sparsity": {
@@ -76,6 +79,6 @@
   },
   "regularization": {
     "enabled": true,
-    "lambda_max": 0.00003
+    "lambda_max": 0.0012
   }
 }

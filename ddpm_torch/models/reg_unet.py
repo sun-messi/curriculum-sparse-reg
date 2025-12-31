@@ -24,15 +24,19 @@ class RegUNet(UNet):
     """
     UNet with Group L1 regularization support.
 
-    Provides methods to compute Group L1 penalty on all Conv layers,
+    Provides methods to compute Group L1 penalty on Conv layers from the
+    last ResBlock of the last downsample level (before bottleneck),
     which encourages structured sparsity (entire output channels
-    becoming zero).
+    becoming zero) in the deepest feature layers.
 
     Group L1 formula:
         L_reg = lambda * sum_layers sum_c ||W[c,:,:,:]||_2
 
     Where W[c,:,:,:] is the weight for output channel c, and we
     compute the L2 norm of each channel's weights then sum them.
+
+    Note: Regularization is only applied to the last ResBlock of
+    downsamples.level_N-1 (the ResBlock directly feeding into bottleneck).
 
     Args:
         **unet_kwargs: Arguments passed to parent UNet class
@@ -43,6 +47,7 @@ class RegUNet(UNet):
 
         # Cache conv layers for efficiency
         self._conv_layers = None
+        self._bottleneck_adjacent_conv_layers = None
 
     def get_conv_layers(self):
         """
@@ -63,6 +68,34 @@ class RegUNet(UNet):
         self._conv_layers = conv_layers
         return conv_layers
 
+    def get_bottleneck_adjacent_conv_layers(self):
+        """
+        Get only the conv layers from the last ResBlock of the last downsample level.
+
+        This ResBlock's output directly feeds into the bottleneck/middle block.
+
+        Returns:
+            List of (name, module) tuples for conv layers
+        """
+        if self._bottleneck_adjacent_conv_layers is not None:
+            return self._bottleneck_adjacent_conv_layers
+
+        last_level = self.levels - 1
+        conv_layers = []
+
+        # Last ResBlock of downsample (输出直接进bottleneck)
+        downsample_module = self.downsamples[f"level_{last_level}"]
+        last_res_idx = self.num_res_blocks - 1
+        last_resblock = downsample_module[last_res_idx]
+
+        for name, module in last_resblock.named_modules():
+            if isinstance(module, (CustomConv2d, nn.Conv2d, nn.ConvTranspose2d)):
+                full_name = f"downsamples.level_{last_level}.{last_res_idx}.{name}" if name else f"downsamples.level_{last_level}.{last_res_idx}"
+                conv_layers.append((full_name, module))
+
+        self._bottleneck_adjacent_conv_layers = conv_layers
+        return conv_layers
+
     def get_group_l1_penalty(self, lambda_val):
         """
         Compute Group L1 regularization penalty.
@@ -71,6 +104,10 @@ class RegUNet(UNet):
         leading to structured sparsity that can be pruned.
 
         Formula: L_reg = lambda * sum_layers sum_c ||W[c,:,:,:]||_2
+
+        Note: Only applied to the last ResBlock of the last downsample level
+        (the ResBlock directly feeding into bottleneck) for targeted
+        regularization of high-level features.
 
         Args:
             lambda_val: Regularization strength coefficient
@@ -84,7 +121,7 @@ class RegUNet(UNet):
             return torch.tensor(0.0, device=device)
 
         penalty = torch.tensor(0.0, device=device)
-        conv_layers = self.get_conv_layers()
+        conv_layers = self.get_bottleneck_adjacent_conv_layers()
 
         for name, layer in conv_layers:
             weight = layer.weight

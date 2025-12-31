@@ -1,0 +1,60 @@
+================================================================================
+U-ViT CelebA-64 NIQE Comparison (All Checkpoints)
+Last Updated: 2025-12-26 07:48:07
+Dataset: celeba
+Images per checkpoint: ~5000 generated images
+Evaluation Metric: NIQE (Natural Image Quality Evaluator, lower is better)
+================================================================================
+
+Checkpoint      |        Baseline |  Curriculum (C) |  Curriculum+Sparsity (CS) |
+--------------------------------------------------------------------------------
+10000_ema       |          2.8632 |          2.5548 |          3.5548 |
+20000_ema       |          2.4124 |          3.1925 |          3.5576 |
+30000_ema       |          1.8412 |          1.3787 |          2.6689 |
+40000_ema       |          0.8479 |          1.1155 |          1.9060 |
+50000_ema       |          0.8365 |          0.9834 |          1.2276 |
+60000_ema       |          1.0051 |          0.9718 |          0.9702 |
+70000_ema       |          1.1464 |          1.0055 |          1.0249 |
+80000_ema       |          1.1994 |          1.0286 |          1.0910 |
+90000_ema       |          1.1633 |          1.0674 |          1.1084 |
+100000_ema      |          1.1374 |          1.0794 |          1.0555 |
+110000_ema      |          1.1250 |          1.0298 |          1.0465 |
+120000_ema      |          1.1175 |          1.0211 |          1.0622 |
+130000_ema      |          1.1132 |          1.0597 |          1.0729 |
+140000_ema      |          1.1100 |          1.0787 |          1.0797 |
+150000_ema      |          1.1094 |          1.0900 |          1.0849 |
+160000_ema      |          1.1069 |          1.0948 |          1.0867 |
+170000_ema      |          1.1046 |          1.0942 |          1.0882 |
+180000_ema      |          1.1003 |          1.0898 |          1.0881 |
+190000_ema      |          1.0992 |          1.0848 |          1.0891 |
+
+BEST NIQE (lower is better):
+  Baseline                       0.8365 @ 50k iterations
+  Curriculum (C)                 0.9718 @ 60k iterations
+  Curriculum+Sparsity (CS)       0.9702 @ 60k iterations
+
+Results Analysis:
+  • Curriculum (C) average improvement over Baseline: 1.7%
+  • Curriculum+Sparsity (CS) average improvement over Baseline: -14.0%
+
+Note: NIQE (Natural Image Quality Evaluator) measures how well generated
+      images conform to natural scene statistics. Lower scores indicate
+      images that are more similar to natural images, with fewer artifacts.
+
+================================================================================
+Source File Locations:
+================================================================================
+
+Baseline:
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small/20251226_025347
+  Timestamp: 2025-12-26 03:19:27
+
+Curriculum (C):
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_c/20251226_042556
+  Timestamp: 2025-12-26 04:52:33
+
+Curriculum+Sparsity (CS):
+  Directory: /home/sunj11/Documents/U-ViT/eval_samples/celeba64_uvit_small_cs/20251226_035545
+  Timestamp: 2025-12-26 04:21:29
+
+================================================================================
